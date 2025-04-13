@@ -3,6 +3,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.views import generic
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.forms import UserCreationForm
+from django import forms
 from django.contrib.auth import get_user_model
 
 from .models import Driver, Car, Manufacturer
@@ -27,6 +29,31 @@ def index(request):
     }
 
     return render(request, "taxi/index.html", context=context)
+
+
+class DriverCreationForm(UserCreationForm):
+    license_number = forms.CharField(
+        max_length=8,
+        help_text="License number must be 3 uppercase letters followed by 5 digits (e.g., ABC12345)"
+    )
+
+    class Meta(UserCreationForm.Meta):
+        model = get_user_model()
+        fields = UserCreationForm.Meta.fields + ('first_name', 'last_name', 'license_number')
+
+    def clean_license_number(self):
+        license_number = self.cleaned_data['license_number']
+
+        if len(license_number) != 8:
+            raise forms.ValidationError("License number must be exactly 8 characters long.")
+
+        if not license_number[:3].isalpha() or not license_number[:3].isupper():
+            raise forms.ValidationError("First 3 characters must be uppercase letters.")
+
+        if not license_number[3:].isdigit():
+            raise forms.ValidationError("Last 5 characters must be digits.")
+
+        return license_number
 
 
 class ManufacturerListView(LoginRequiredMixin, generic.ListView):
@@ -91,10 +118,16 @@ class DriverDetailView(LoginRequiredMixin, generic.DetailView):
 
 
 class DriverCreateView(LoginRequiredMixin, generic.CreateView):
-    model = Driver
-    fields = ['username', 'first_name', 'last_name', 'license_number', 'password']
+    model = get_user_model()
+    form_class = DriverCreationForm
     template_name = 'taxi/driver_form.html'
     success_url = reverse_lazy('taxi:driver-list')
+
+    def form_valid(self, form):
+        user = form.save(commit=False)
+        user.set_password(form.cleaned_data["password1"])
+        user.save()
+        return super().form_valid(form)
 
 
 class DriverDeleteView(LoginRequiredMixin, generic.DeleteView):
